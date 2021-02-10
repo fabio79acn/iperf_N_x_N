@@ -1,0 +1,92 @@
+---
+
+- name: iperf3
+  hosts: [ 'all' ]
+  any_errors_fatal: true
+
+  vars:
+    iperf3_port: "5201"
+    hostsgroup: "all"
+
+  tasks:
+     # docker run --rm -ti --net=host -p 5001:5001  --name=iperf3 registry.redhat.io/rhel7 /bin/bash -c "yum install iperf3 -y && iperf3 -s -p 5001 --verbose --json "
+     - name: Start iperf3 as a Daemon
+       docker_container:
+         name: iperf3_server
+         #image: registry.redhat.io/rhel7
+         image: quay.io/gbsalinetti/iperf3
+         #command: /bin/bash -c "yum install iperf3 -y --quiet && iperf3 -s -p {{ iperf3_port }} --verbose"
+         #command: sleep infinity
+         state: started
+         #state: created => CREA IL CONTAINER MA NON LO FA PARTIRE
+         recreate: true
+         exposed_ports:
+           - "{{ iperf3_port }}"
+         auto_remove: false
+         detach: true
+         network_mode: host
+         #restart_retries: 1
+         tty: true
+
+
+     - name: Allow iperf3 tests by iptables
+       iptables:
+         table: filter
+         chain: OS_FIREWALL_ALLOW
+         #in_interface: eth0
+         protocol: tcp
+         match: tcp
+         destination_port: "{{ iperf3_port }}"
+         jump: ACCEPT
+         comment: Allow iperf3 tests
+         action: append
+
+
+     - name: Start iperf3 as a Client (Forward mode)
+       docker_container:
+         name: iperf3_client
+         #image: registry.redhat.io/rhel7
+         image: quay.io/gbsalinetti/iperf3
+         #command: /bin/bash -c "yum install iperf3 -y --quiet && echo {{ item [0] }} && set -x && iperf3 -c {{ item[1] }} -p {{ iperf3_port }}  "
+         entrypoint: /bin/bash -c "echo {{ item [0] }} && set -x && iperf3 -c {{ item[1] }} -p {{ iperf3_port }}  "
+         state: started
+         recreate: true
+         #auto_remove: true
+         auto_remove: false
+         detach: false
+         network_mode: host
+         #restart_retries: 1
+         tty: true
+         debug: true
+       #loop: "{{ ['alice', 'bob'] |product(['clientdb', 'employeedb', 'providerdb'])|list }}"
+       loop: "{{  groups[  hostsgroup  ]  |  product(  groups[  hostsgroup  ] ) | list }}"
+       when:
+         - item[0] != item[1]
+         - inventory_hostname == item[0]
+         - inventory_hostname != item[1]
+       throttle: 1
+
+     - name: Start iperf3 as a Client (Reverse mode)
+       docker_container:
+         name: iperf3_client
+         #image: registry.redhat.io/rhel7
+         image: quay.io/gbsalinetti/iperf3
+         #command: /bin/bash -c "yum install iperf3 -y --quiet && echo {{ item [0] }} && set -x && iperf3 -c {{ item[1] }} -p {{ iperf3_port }}  "
+         entrypoint: /bin/bash -c "echo {{ item [0] }} && set -x && iperf3 -c {{ item[1] }} -p {{ iperf3_port }} -R "
+         state: started
+         recreate: true
+         #auto_remove: true
+         auto_remove: false
+         detach: false
+         network_mode: host
+         #restart_retries: 1
+         tty: true
+         debug: true
+       #loop: "{{ ['alice', 'bob'] |product(['clientdb', 'employeedb', 'providerdb'])|list }}"
+       loop: "{{  groups[  hostsgroup  ]  |  product(  groups[  hostsgroup  ] ) | list }}"
+       when:
+         - item[0] != item[1]
+         - inventory_hostname == item[0]
+         - inventory_hostname != item[1]
+       throttle: 1
+
